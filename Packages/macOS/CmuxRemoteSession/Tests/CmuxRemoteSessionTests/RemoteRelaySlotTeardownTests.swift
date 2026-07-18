@@ -287,6 +287,44 @@ struct RemoteRelaySlotTeardownTests {
     }
 
     @Test
+    func daemonTransportFailureResetsReverseRelayBeforeRebootstrap() {
+        let runner = SpyProcessRunner()
+        let coordinator = makeCoordinator(runner: runner)
+        defer {
+            coordinator.stop()
+            coordinator.queue.sync {}
+        }
+        let staleForwardSpec = "127.0.0.1:64010:127.0.0.1:54321"
+
+        coordinator.queue.sync {
+            coordinator.daemonReady = true
+            coordinator.daemonRemotePath = ".cmux/bin/cmuxd-remote"
+            coordinator.reverseRelayControlMasterForwardSpec = staleForwardSpec
+            coordinator.reverseRelayRestartToken = UUID()
+            coordinator.handleProxyBrokerUpdateLocked(
+                .error("Remote daemon transport failed: daemon transport keepalive timed out"),
+                leaseGeneration: coordinator.proxyLeaseGeneration
+            )
+        }
+
+        let relayState = coordinator.queue.sync {
+            (
+                coordinator.reverseRelayControlMasterForwardSpec,
+                coordinator.reverseRelayRestartToken,
+                coordinator.daemonReady,
+                coordinator.daemonRemotePath,
+                coordinator.reconnectToken
+            )
+        }
+        #expect(relayState.0 == nil)
+        #expect(relayState.1 == nil)
+        #expect(!relayState.2)
+        #expect(relayState.3 == nil)
+        #expect(relayState.4 != nil)
+        #expect(runner.requests.contains { $0.arguments.last?.contains("64010.auth") == true })
+    }
+
+    @Test
     func coordinatorStopUsesFinalPersistentSlotTeardown() async throws {
         let runner = SpyProcessRunner()
         let coordinator = makeCoordinator(runner: runner)

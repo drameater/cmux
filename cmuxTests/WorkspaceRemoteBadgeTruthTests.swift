@@ -1,4 +1,5 @@
 import CmuxCore
+import Testing
 import XCTest
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -105,5 +106,87 @@ final class WorkspaceRemoteBadgeTruthTests: XCTestCase {
         }
         XCTAssertEqual(terminalSurfaceIds.count, 1)
         return try XCTUnwrap(terminalSurfaceIds.first)
+    }
+}
+
+@Suite(.serialized)
+@MainActor
+struct WorkspaceRecoveredTransportArtifactsTests {
+    @Test
+    func successfulRecoveryClearsOnlyRemoteTransportErrorArtifacts() {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let notificationStore = TerminalNotificationStore.shared
+        let originalNotificationStore = appDelegate.notificationStore
+        let originalNotifications = notificationStore.notifications
+        let originalCooldownDates = notificationStore.lastNotificationDateByCooldownKey
+        notificationStore.replaceNotificationsForTesting([])
+        notificationStore.lastNotificationDateByCooldownKey.removeAll()
+        notificationStore.configureNotificationDeliveryHandlerForTesting { _, _ in }
+        notificationStore.configureSuppressedNotificationFeedbackHandlerForTesting { _, _ in }
+        appDelegate.notificationStore = notificationStore
+        defer {
+            notificationStore.replaceNotificationsForTesting(originalNotifications)
+            notificationStore.lastNotificationDateByCooldownKey = originalCooldownDates
+            notificationStore.resetNotificationDeliveryHandlerForTesting()
+            notificationStore.resetSuppressedNotificationFeedbackHandlerForTesting()
+            appDelegate.notificationStore = originalNotificationStore
+        }
+
+        let workspace = Workspace()
+        let config = WorkspaceRemoteConfiguration(
+            destination: "host",
+            port: nil,
+            identityFile: nil,
+            sshOptions: [],
+            localProxyPort: nil,
+            relayPort: 64007,
+            relayID: String(repeating: "a", count: 16),
+            relayToken: String(repeating: "b", count: 64),
+            localSocketPath: "/tmp/cmux-debug-test.sock",
+            terminalStartupCommand: "ssh-pty-attach",
+            preserveAfterTerminalExit: true
+        )
+        workspace.configureRemoteConnection(config, autoConnect: false)
+
+        let unrelatedNotificationBody = "Build completed"
+        notificationStore.addNotification(
+            tabId: workspace.id,
+            surfaceId: UUID(),
+            title: "Build",
+            subtitle: "",
+            body: unrelatedNotificationBody,
+            resolvedHooks: []
+        )
+
+        let proxyError = "Remote proxy to host unavailable: Remote daemon transport failed: daemon transport keepalive timed out"
+        let daemonError = "Remote daemon transport needs re-bootstrap after proxy failure (retry 1 in 2s)"
+        workspace.applyRemoteConnectionStateUpdate(.error, detail: proxyError, target: "host")
+        workspace.applyRemoteDaemonStatusUpdate(
+            WorkspaceRemoteDaemonStatus(state: .error, detail: daemonError),
+            target: "host"
+        )
+        workspace.logEntries.append(
+            SidebarLogEntry(
+                message: "Compilation failed",
+                level: .error,
+                source: "build",
+                timestamp: Date()
+            )
+        )
+        #expect(notificationStore.sidebarUnread.latestNotificationText(forWorkspaceId: workspace.id) == proxyError)
+
+        workspace.applyRemoteDaemonStatusUpdate(
+            WorkspaceRemoteDaemonStatus(state: .ready, detail: "Remote daemon ready"),
+            target: "host"
+        )
+        workspace.applyRemoteConnectionStateUpdate(.connected, detail: "Connected to host", target: "host")
+
+        #expect(workspace.statusEntries["remote.error"] == nil)
+        #expect(!workspace.logEntries.contains(where: { $0.source == "remote-proxy" }))
+        #expect(!workspace.logEntries.contains(where: { $0.source == "remote-daemon" }))
+        #expect(workspace.logEntries.contains(where: { $0.source == "build" }))
+        #expect(notificationStore.sidebarUnread.latestNotificationText(forWorkspaceId: workspace.id) == unrelatedNotificationBody)
+        #expect(notificationStore.notifications(forTabId: workspace.id, surfaceId: nil).isEmpty)
+        #expect(notificationStore.notifications.contains(where: { $0.body == unrelatedNotificationBody }))
     }
 }
