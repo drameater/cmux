@@ -187,6 +187,7 @@ struct TerminalNotificationPolicyEnvelope: Codable, Sendable, Equatable {
 struct TerminalNotificationPolicyRequest: Sendable {
     let tabId: UUID
     let surfaceId: UUID?
+    let source: String?
     let panelId: UUID?
     let retargetsToLiveSurfaceOwner: Bool
     let title: String
@@ -198,6 +199,7 @@ struct TerminalNotificationPolicyRequest: Sendable {
     init(
         tabId: UUID,
         surfaceId: UUID?,
+        source: String? = nil,
         panelId: UUID? = nil,
         retargetsToLiveSurfaceOwner: Bool = false,
         title: String,
@@ -209,6 +211,7 @@ struct TerminalNotificationPolicyRequest: Sendable {
     ) {
         self.tabId = tabId
         self.surfaceId = surfaceId
+        self.source = source
         self.panelId = panelId
         self.retargetsToLiveSurfaceOwner = retargetsToLiveSurfaceOwner
         self.title = title

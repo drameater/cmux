@@ -801,6 +801,33 @@ final class TerminalNotificationStore: ObservableObject {
         remove(id: latestNotification.id)
     }
 
+    /// Clears notifications emitted by one logical source while preserving
+    /// unrelated workspace and pane notifications.
+    func clearNotifications(forTabId tabId: UUID, source: String) {
+        inFlightPolicyRequests.discard(forTabId: tabId, source: source)
+        let matchingNotifications = notifications.filter {
+            $0.tabId == tabId && $0.source == source
+        }
+        guard !matchingNotifications.isEmpty else { return }
+
+        let idsToClear = matchingNotifications.map { $0.id.uuidString }
+        let matchingIds = Set(matchingNotifications.map(\.id))
+        replaceNotificationsForClear(notifications.filter { !matchingIds.contains($0.id) })
+        CmuxEventBus.shared.publishNotificationCleared(
+            ids: idsToClear,
+            workspaceId: tabId,
+            surfaceId: nil
+        )
+        center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+        center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+        emitNotificationsDismissed(
+            ids: idsToClear,
+            drainedSuperseded: supersededPhoneDismissBuffer.flush(
+                forKey: SupersededPhoneDismissBuffer.key(tabId: tabId, surfaceId: nil)
+            )
+        )
+    }
+
     func focusedReadIndicatorSurfaceId(forTabId tabId: UUID) -> UUID? {
         focusedReadIndicatorByTabId[tabId]
     }
@@ -836,6 +863,7 @@ final class TerminalNotificationStore: ObservableObject {
     func addNotification(
         tabId: UUID,
         surfaceId: UUID?,
+        source: String? = nil,
         title: String,
         subtitle: String,
         body: String,
@@ -882,6 +910,7 @@ final class TerminalNotificationStore: ObservableObject {
         let policyContext = makeNotificationPolicyContext(
             tabId: tabId,
             surfaceId: surfaceId,
+            source: source,
             title: title,
             subtitle: subtitle,
             body: body,
@@ -1045,6 +1074,7 @@ final class TerminalNotificationStore: ObservableObject {
     private func makeNotificationPolicyContext(
         tabId: UUID,
         surfaceId: UUID?,
+        source: String? = nil,
         title: String,
         subtitle: String,
         body: String,
@@ -1085,6 +1115,7 @@ final class TerminalNotificationStore: ObservableObject {
             request: TerminalNotificationPolicyRequest(
                 tabId: tabId,
                 surfaceId: surfaceId,
+                source: source,
                 panelId: panelId,
                 retargetsToLiveSurfaceOwner: retargetsToLiveSurfaceOwner,
                 title: title,
@@ -1114,6 +1145,7 @@ final class TerminalNotificationStore: ObservableObject {
             request: TerminalNotificationPolicyRequest(
                 tabId: request.tabId,
                 surfaceId: request.surfaceId,
+                source: request.source,
                 panelId: request.panelId,
                 retargetsToLiveSurfaceOwner: request.retargetsToLiveSurfaceOwner,
                 title: payload.title,
@@ -1150,6 +1182,7 @@ final class TerminalNotificationStore: ObservableObject {
             tabId: request.tabId,
             surfaceId: request.surfaceId,
             panelId: request.panelId,
+            source: request.source,
             retargetsToLiveSurfaceOwner: request.retargetsToLiveSurfaceOwner,
             title: request.title,
             subtitle: request.subtitle,
@@ -1634,6 +1667,7 @@ final class TerminalNotificationStore: ObservableObject {
             tabId: notification.tabId,
             surfaceId: notification.surfaceId,
             panelId: notification.panelId,
+            source: notification.source,
             retargetsToLiveSurfaceOwner: notification.retargetsToLiveSurfaceOwner,
             title: notification.title,
             subtitle: notification.subtitle,
@@ -1728,6 +1762,7 @@ final class TerminalNotificationStore: ObservableObject {
                 tabId: destinationTabId,
                 surfaceId: notification.surfaceId,
                 panelId: notification.panelId,
+                source: notification.source,
                 title: notification.title,
                 subtitle: notification.subtitle,
                 body: notification.body,

@@ -437,6 +437,8 @@ public final class RemoteSessionCoordinator: @unchecked Sendable {
             failPendingPTYBridgeStartsLocked("remote daemon is not ready")
             guard Self.shouldEscalateProxyErrorToBootstrap(detail) else { return }
 
+            cancelReverseRelayRestartLocked()
+            stopReverseRelayLocked(cleanupScope: .transport)
             releaseProxyLeaseLocked()
             daemonReady = false
             daemonBootstrapVersion = nil

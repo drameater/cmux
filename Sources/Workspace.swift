@@ -2353,6 +2353,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     private static let remoteErrorStatusKey = "remote.error"
     private static let remotePortConflictStatusKey = "remote.port_conflicts"
+    private static let remoteConnectionNotificationSource = "remote.connection"
     private static let remoteNotificationCooldown: TimeInterval = 5 * 60
     private static let remoteHeartbeatDateFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -2500,6 +2501,14 @@ final class Workspace: Identifiable, ObservableObject {
         statusEntries.removeValue(forKey: Self.remoteErrorStatusKey)
         logEntries.removeAll(where: Self.isProxyOnlyRemoteLogEntry)
         remoteLastErrorFingerprint = nil
+    }
+
+    private func clearRecoveredRemoteSidebarArtifacts() {
+        clearProxyOnlyRemoteSidebarArtifacts()
+        AppDelegate.shared?.notificationStore?.clearNotifications(
+            forTabId: id,
+            source: Self.remoteConnectionNotificationSource
+        )
     }
 
     private func remoteNotificationCooldownKey(target: String) -> String? {
@@ -6374,6 +6383,7 @@ final class Workspace: Identifiable, ObservableObject {
                 AppDelegate.shared?.notificationStore?.addNotification(
                     tabId: id,
                     surfaceId: nil,
+                    source: Self.remoteConnectionNotificationSource,
                     title: String(
                         localized: "remote.notification.suspendedTitle",
                         defaultValue: "SSH Reconnect Paused"
@@ -6411,6 +6421,7 @@ final class Workspace: Identifiable, ObservableObject {
                 AppDelegate.shared?.notificationStore?.addNotification(
                     tabId: id,
                     surfaceId: nil,
+                    source: Self.remoteConnectionNotificationSource,
                     title: notificationTitle,
                     subtitle: target,
                     body: trimmedDetail,
@@ -6422,8 +6433,11 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         if state == .connected {
-            statusEntries.removeValue(forKey: Self.remoteErrorStatusKey)
-            remoteLastErrorFingerprint = nil
+            // A recovered proxy is current health, not merely another log
+            // event. Remove only transport-derived sidebar artifacts so a
+            // successful reconnect does not leave the workspace looking
+            // failed while preserving unrelated agent/build history.
+            clearRecoveredRemoteSidebarArtifacts()
         }
     }
 

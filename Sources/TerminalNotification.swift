@@ -5,6 +5,7 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
     let tabId: UUID
     let surfaceId: UUID?
     let panelId: UUID?
+    let source: String?
     let retargetsToLiveSurfaceOwner: Bool
     let title: String
     let subtitle: String
@@ -20,6 +21,7 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
         tabId: UUID,
         surfaceId: UUID?,
         panelId: UUID? = nil,
+        source: String? = nil,
         retargetsToLiveSurfaceOwner: Bool = true,
         title: String,
         subtitle: String,
@@ -34,6 +36,7 @@ struct TerminalNotification: Identifiable, Hashable, Sendable {
         self.tabId = tabId
         self.surfaceId = surfaceId
         self.panelId = panelId
+        self.source = source
         self.retargetsToLiveSurfaceOwner = retargetsToLiveSurfaceOwner
         self.title = title
         self.subtitle = subtitle
